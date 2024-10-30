@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSONL Editor UN</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body class="dark:bg-gray-900">
+    <div class="container">
+        <header class="d-flex justify-content-between align-items-center py-4">
+            <h1 class="h3 mb-0">JSONL Editor</h1>
+            <div class="d-flex align-items-center gap-3">
+                <div class="font-size-control d-flex align-items-center gap-2">
+                    <label for="fontSize" class="mb-0">Font Size:</label>
+                    <input type="number" id="fontSize" class="form-control form-control-sm" value="14" min="8" max="32" style="width: 70px;">
+                </div>
+                <div class="theme-toggle">
+                    <button id="themeToggle" class="btn btn-outline-secondary">
+                        <span class="theme-icon"></span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div class="mb-4">
+                <textarea id="jsonInput" class="form-control" rows="8" placeholder="Paste your JSONL or JSON content here..."></textarea>
+                <div class="mt-2">
+                    <button id="parseBtn" class="btn btn-primary">Parse</button>
+                    <button id="sampleBtn" class="btn btn-secondary">Try Sample</button>
+                </div>
+            </div>
+
+            <div id="errorContainer" class="alert alert-danger d-none" role="alert"></div>
+
+            <div class="filters mb-4">
+                <div class="d-flex gap-3 align-items-center">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="filterSystem" checked>
+                        <label class="form-check-label" for="filterSystem">System</label>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="filterUser" checked>
+                        <label class="form-check-label" for="filterUser">User</label>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="filterAssistant" checked>
+                        <label class="form-check-label" for="filterAssistant">Assistant</label>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="hideFirstMsg">
+                        <label class="form-check-label" for="hideFirstMsg">Hide 1st msg</label>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="showLatestMsg">
+                        <label class="form-check-label" for="showLatestMsg">Show Latest msg</label>
+                    </div>
+                    <div class="ms-auto">
+                        <input type="text" id="searchInput" class="form-control" placeholder="Search messages...">
+                    </div>
+                </div>
+            </div>
+
+            <div id="parsedContent" class="mb-4"></div>
+
+            <div class="d-flex justify-content-end">
+                <button id="exportBtn" class="btn btn-primary">
+                    <span class="icon-download me-2"></span>
+                    Export JSONL
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Playground Modal -->
+    <div class="modal fade" id="playgroundModal" tabindex="-1">
+        <div class="modal-dialog modal-fullscreen">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Playground</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Playground panels will be rendered here -->
+                    <div id="playgroundPanels" class="d-flex"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="savePlaygroundChanges">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal fade" id="exportModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Export JSONL</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <textarea id="exportContent" class="form-control" rows="10" readonly></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" id="copyBtn" class="btn btn-secondary">Copy to Clipboard</button>
+                    <button type="button" id="downloadBtn" class="btn btn-primary">Download</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/icons.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/playground.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/editor.js') }}"></script>
+</body>
+</html>
