@@ -465,13 +465,15 @@ const JSONLEditor = {
     const item = this.state.parsedContent[itemIndex];
     if (!item) return;
 
-    // Save JSONL messages to localStorage
-    console.log('Saving messages to localStorage...', item.messages);
-    localStorage.setItem('jsonlMessages', JSON.stringify(item.messages));
+    // Encode JSONL messages to a URL-friendly format
+    const jsonlData = encodeURIComponent(JSON.stringify(item.messages));
     
     // Open the Vite playground app (assuming it's on the /playground route)
     console.log('Opening playground...');
-    window.open('http://127.0.0.1:5173/playground', '_blank');
+    // window.open('http://127.0.0.1:5173/playground', '_blank');
+    // Modify the URL to include the referrer as a parameter
+    const playgroundUrl = `http://127.0.0.1:5173/playground?jsonlData=${jsonlData}&referrer=${encodeURIComponent(window.location.href)}`;
+    window.open(playgroundUrl, '_blank');
     // window.open('/playground', '_blank');
 
 

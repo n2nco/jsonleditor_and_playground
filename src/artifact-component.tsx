@@ -1,7 +1,5 @@
-// @ts-nocheck
-
 import React, { useState, useEffect, useRef } from 'react'; 
-import { X, Plus, Save, RotateCcw, GripVertical, Trash2, Copy, Maximize2 } from 'lucide-react';
+import { X, Plus, Save, RotateCcw, GripVertical, Trash2, Copy, Maximize2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -66,38 +64,41 @@ const ModelPlayground = () => {
   [drag, setDrag] = useState(null), 
   [modal, setModal] = useState({t:'',c:''}), 
   [timing, setTiming] = useState({}),  // Add this line
-  ref = useRef();
+  [referrer, setReferrer] = useState(null);
 
-  useEffect(() => { try {
-    const c = JSON.parse(localStorage.getItem('cfgs')||'{}'), p = JSON.parse(localStorage.getItem('panels')||'[]');
-    if(Object.keys(c).length) setCfgs(x=>({...x,...c})); if(p.length) setPanels(p);
-  } catch{} }, []);
+  const ref = useRef();
+
   useEffect(() => {
-    try {
-        const storedCfgs = JSON.parse(localStorage.getItem('cfgs') || '{}');
-        const storedPanels = JSON.parse(localStorage.getItem('panels') || '[]');
-        const jsonlMessages = localStorage.getItem('jsonlMessages');
+    // Retrieve configurations and panels from local storage if available
+    const storedCfgs = JSON.parse(localStorage.getItem('cfgs') || '{}');
+    const storedPanels = JSON.parse(localStorage.getItem('panels') || '[]');
+    if (Object.keys(storedCfgs).length) setCfgs(prev => ({ ...prev, ...storedCfgs }));
+    if (storedPanels.length) setPanels(storedPanels);
+  }, []);
 
-        // Load configurations if available
-        if (Object.keys(storedCfgs).length) setCfgs(prev => ({ ...prev, ...storedCfgs }));
+  useEffect(() => {
+    // Retrieve the referrer URL and JSONL data from the query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const referrerUrl = urlParams.get('referrer');
+    const jsonlData = urlParams.get('jsonlData');
 
-        // Load panels if available, otherwise set a default panel
-        if (storedPanels.length) {
-            setPanels(storedPanels);
-        } else {
-            setPanels([{ id: Date.now(), configName: 'default-openai', messages: [{ role: 'system', content: 'You are a helpful assistant.' }], response: '' }]);
-        }
-
-        // If JSONL messages are available, load them into a new panel
-        if (jsonlMessages) {
-            const parsedMessages = JSON.parse(jsonlMessages);
-            setPanels([{ id: Date.now(), configName: 'default-openai', messages: parsedMessages, response: '' }]);
-            localStorage.removeItem('jsonlMessages');
-        }
-    } catch (error) {
-        console.error('Error loading data from localStorage:', error);
+    setReferrer(referrerUrl);
+    if (jsonlData) {
+      try {
+        const parsedMessages = JSON.parse(decodeURIComponent(jsonlData));
+        setPanels([{ id: Date.now(), configName: 'default-openai', messages: parsedMessages, response: '' }]);
+      } catch (error) {
+        console.error('Error parsing JSONL data:', error);
+      }
     }
-}, []);
+  }, []);
+
+  useEffect(() => {
+    // Retrieve the referrer URL from the query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const referrerUrl = urlParams.get('referrer');
+    setReferrer(referrerUrl);
+  }, []);
 
   const save = (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch{} },
   parseMsg = t => { try { const d = JSON.parse(t); return d.messages||[d]; } catch { throw new Error('Invalid JSON'); }},
@@ -212,7 +213,18 @@ const call = async i => {
   const Dlg = ({t,c,o}) => <Dialog><DialogTrigger asChild>{t}</DialogTrigger><M t={o} c={c}/></Dialog>;
 
   return (
+
     <div className="h-screen bg-gray-900 text-gray-100 flex">
+          <div className="h-screen bg-gray-900 text-gray-100 flex flex-col">
+    {/* Return Home Button */}
+    <div className="p-4">
+      {referrer && (
+        <Button onClick={() => window.location.href = referrer} variant="ghost" className="flex items-center gap-1">
+          <ArrowLeft className="h-4 w-4"/>Home
+        </Button>
+      )}
+    </div>
+    </div>
       {modal.c && <Dialog open onOpenChange={()=>setModal({t:'',c:''})}>{modal.t === 'Response' ? modal.c : 
         <M t={modal.t} c={<>
           <textarea value={modal.c} readOnly className="mt-4 w-full h-48 bg-gray-900 p-2 text-sm font-mono rounded" onClick={e=>e.target.select()}/>
