@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'; 
-import { X, Plus, Save, RotateCcw, GripVertical, Trash2, Copy, Maximize2 } from 'lucide-react';
+import { X, Plus, Save, RotateCcw, GripVertical, Trash2, Copy, Maximize2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -68,14 +68,35 @@ const ModelPlayground = () => {
   [err, setErr] = useState(''), 
   [drag, setDrag] = useState(null), 
   [modal, setModal] = useState({t:'',c:''}), 
-  [timing, setTiming] = useState({}),  
-  ref = useRef();
+  [timing, setTiming] = useState({}),  // Add this line
+  [referrer, setReferrer] = useState(null);
 
-  useEffect(() => { try {
-    const c = JSON.parse(localStorage.getItem('cfgs')||'{}'), p = JSON.parse(localStorage.getItem('panels')||'[]');
-    if(Object.keys(c).length) setCfgs(x=>({...x,...c})); if(p.length) setPanels(p);
-  } catch{} }, []);
+  const ref = useRef();
 
+  useEffect(() => {
+    // Retrieve configurations and panels from local storage if available
+    const storedCfgs = JSON.parse(localStorage.getItem('cfgs') || '{}');
+    const storedPanels = JSON.parse(localStorage.getItem('panels') || '[]');
+    if (Object.keys(storedCfgs).length) setCfgs(prev => ({ ...prev, ...storedCfgs }));
+    if (storedPanels.length) setPanels(storedPanels);
+  }, []);
+
+  useEffect(() => {
+    // Retrieve the referrer URL and JSONL data from the query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const referrerUrl = urlParams.get('referrer');
+    const jsonlData = urlParams.get('jsonlData');
+
+    setReferrer(referrerUrl);
+    if (jsonlData) {
+      try {
+        const parsedMessages = JSON.parse(decodeURIComponent(jsonlData));
+        setPanels([{ id: Date.now(), configName: 'default-openai', messages: parsedMessages, response: '' }]);
+      } catch (error) {
+        console.error('Error parsing JSONL data:', error);
+      }
+    }
+  }, []);
   const save = (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch{} },
   parseMsg = t => { try { const d = JSON.parse(t); return d.messages||[d]; } catch { throw new Error('Invalid JSON'); }},
   upd = (i,u) => { 
@@ -198,7 +219,17 @@ const ModelPlayground = () => {
   const Dlg = ({t,c,o}) => <Dialog><DialogTrigger asChild>{t}</DialogTrigger><M t={o} c={c}/></Dialog>;
 
   return (
-    <div className="h-screen bg-gray-900 text-gray-100 flex">
+          <div className="h-screen bg-gray-900 text-gray-100 flex">
+          <div className="h-screen bg-gray-900 text-gray-100 flex flex-col">
+      {/* Return Home Button */}
+      <div className="p-4">
+      {referrer && (
+        <Button onClick={() => window.location.href = referrer} variant="ghost" className="flex items-center gap-1">
+          <ArrowLeft className="h-4 w-4"/>Home
+        </Button>
+      )}
+      </div>
+      </div>
       {modal.c && <Dialog open onOpenChange={()=>setModal({t:'',c:''})}>{modal.t === 'Response' ? modal.c : 
         <M t={modal.t} c={<>
           <textarea value={modal.c} readOnly className="mt-4 w-full h-48 bg-gray-900 p-2 text-sm font-mono rounded" onClick={e=>e.target.select()}/>
