@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react'; 
-import { X, Plus, Save, RotateCcw, GripVertical, Trash2, Copy, Maximize2, ArrowLeft } from 'lucide-react';
+import { X, Plus, Save, RotateCcw, GripVertical, Trash2, Copy, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
-const d = { b: { temperature: 0.7, max_tokens: 150, top_p: 1, stream: false, api_key: '', proxy_url: '', kwargs: { logit_bias: {}, presence_penalty: 0, frequency_penalty: 0 }},
+const d = { 
+  b: { temperature: 0.5, max_tokens: 500, top_p: 1, stream: false, api_key: '', proxy_url: '', kwargs: { logit_bias: {}, presence_penalty: 0, frequency_penalty: 0 }},
   o: { provider: 'openai', model: 'gpt-3.5-turbo' }, 
-  a: { provider: 'azure', deployment_name: '', endpoint: '', api_version: '2024-02-15-preview' }},
-  M = ({c,t}) => <DialogContent className="bg-gray-800 text-gray-100 p-4"><DialogTitle>{t}</DialogTitle>{c}</DialogContent>,
-  B = p => <Button variant="ghost" size="sm" {...p}/>;
+  a: { provider: 'azure', deployment_name: 'gpt-35-turbo-0125-____', endpoint: 'https://____.openai.azure.com/', api_key: "your_azure_key", api_version: '2024-02-15-preview' },
+  r: { provider: 'openrouter', model: 'openai/gpt-4o', api_key: 'your_openrouter_api_key', endpoint: 'https://api.openrouter.ai/v1/chat/completions'},
+  c: { provider: 'custom', model: 'your_special_model'}
+};
+
+const M = ({c,t}) => <DialogContent className="bg-gray-800 text-gray-100 p-4"><DialogTitle>{t}</DialogTitle>{c}</DialogContent>,
+B = p => <Button variant="ghost" size="sm" {...p}/>;
 
 const ResponseModal = ({content, onSave}) => {
   const [editedContent, setEditedContent] = useState(content);
@@ -55,7 +60,7 @@ const CopyPanelContent = ({panels, onCopy}) => {
 };
 
 const ModelPlayground = () => {
-  const [cfgs, setCfgs] = useState({'default-openai': {...d.b, ...d.o}, 'default-azure': {...d.b, ...d.a}}),
+  const [cfgs, setCfgs] = useState({'default-openai': {...d.b, ...d.o}, 'default-azure': {...d.b, ...d.a}, 'default-openrouter': {...d.b, ...d.r}}),
   [cur, setCur] = useState({...d.b, ...d.o}), 
   [curText, setCurText] = useState(JSON.stringify({...d.b, ...d.o}, null, 2)),
   [name, setName] = useState('default-openai'),
@@ -63,42 +68,13 @@ const ModelPlayground = () => {
   [err, setErr] = useState(''), 
   [drag, setDrag] = useState(null), 
   [modal, setModal] = useState({t:'',c:''}), 
-  [timing, setTiming] = useState({}),  // Add this line
-  [referrer, setReferrer] = useState(null);
+  [timing, setTiming] = useState({}),  
+  ref = useRef();
 
-  const ref = useRef();
-
-  useEffect(() => {
-    // Retrieve configurations and panels from local storage if available
-    const storedCfgs = JSON.parse(localStorage.getItem('cfgs') || '{}');
-    const storedPanels = JSON.parse(localStorage.getItem('panels') || '[]');
-    if (Object.keys(storedCfgs).length) setCfgs(prev => ({ ...prev, ...storedCfgs }));
-    if (storedPanels.length) setPanels(storedPanels);
-  }, []);
-
-  useEffect(() => {
-    // Retrieve the referrer URL and JSONL data from the query parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const referrerUrl = urlParams.get('referrer');
-    const jsonlData = urlParams.get('jsonlData');
-
-    setReferrer(referrerUrl);
-    if (jsonlData) {
-      try {
-        const parsedMessages = JSON.parse(decodeURIComponent(jsonlData));
-        setPanels([{ id: Date.now(), configName: 'default-openai', messages: parsedMessages, response: '' }]);
-      } catch (error) {
-        console.error('Error parsing JSONL data:', error);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    // Retrieve the referrer URL from the query parameter
-    const urlParams = new URLSearchParams(window.location.search);
-    const referrerUrl = urlParams.get('referrer');
-    setReferrer(referrerUrl);
-  }, []);
+  useEffect(() => { try {
+    const c = JSON.parse(localStorage.getItem('cfgs')||'{}'), p = JSON.parse(localStorage.getItem('panels')||'[]');
+    if(Object.keys(c).length) setCfgs(x=>({...x,...c})); if(p.length) setPanels(p);
+  } catch{} }, []);
 
   const save = (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch{} },
   parseMsg = t => { try { const d = JSON.parse(t); return d.messages||[d]; } catch { throw new Error('Invalid JSON'); }},
@@ -119,112 +95,110 @@ const ModelPlayground = () => {
     }
   };
 
-const call = async i => {
+  const call = async (i) => {
     const p = panels[i];
-    const c = {...cfgs[p.configName]};
-    if(!c?.api_key) return upd(i, {response: 'Need API key'});
-    
+    const c = { ...cfgs[p.configName] };
+    if (!c?.api_key) return upd(i, { response: 'Need API key' });
+
     const startTime = Date.now();
     let firstTokenTime;
-    upd(i, {isLoading: true, response: ''});
-    
+    upd(i, { isLoading: true, response: '' });
+
     try {
-      const baseUrl = c.proxy_url || (c.provider === 'azure' 
-        ? `${c.endpoint}/openai/deployments/${c.deployment_name}`
-        : 'https://api.openai.com');
-      
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(c.provider === 'azure' ? {'api-key': c.api_key} : {'Authorization': `Bearer ${c.api_key}`})
-      };
-  
-      const endpoint = c.provider === 'azure'
-        ? `/chat/completions?api-version=${c.api_version}`
-        : '/v1/chat/completions';
-  
-      const body = {
-        messages: p.messages,
-        model: c.provider === 'azure' ? undefined : c.model,
-        temperature: c.temperature,
-        max_tokens: c.max_tokens,
-        stream: c.stream,
-        ...c.kwargs
-      };
-  
-      const res = await fetch(baseUrl + endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body)
-      });
-  
-      if(!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error?.message || 'API call failed');
-      }
-  
-      if(c.stream) {
-        const reader = res.body?.getReader();
-        let text = '';
-        while(true) {
-          const {done, value} = await reader!.read();
-          if(done) break;
-          const lines = new TextDecoder().decode(value).split('\n');
-          for(const line of lines) {
-            if(line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if(data === '[DONE]') break;
-              try {
-                const content = JSON.parse(data).choices[0]?.delta?.content || '';
-                if(!firstTokenTime && content) {
-                  firstTokenTime = Date.now();
-                  setTiming(t => ({...t, [i]: {
-                    latency: firstTokenTime - startTime
-                  }}));
-                }
-                text += content;
-                upd(i, {response: text, isLoading: true});
-              } catch{}
-            }
-          }
+        const baseUrl = c.proxy_url || 
+            (c.provider === 'azure' 
+                ? `${c.endpoint}/openai/deployments/${c.deployment_name}`
+                : c.provider === 'openrouter' 
+                ? c.endpoint
+                : 'https://api.openai.com');
+
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(c.provider === 'azure' ? { 'api-key': c.api_key } : { 'Authorization': `Bearer ${c.api_key}` })
+        };
+
+        const endpointPath = c.provider === 'azure' 
+            ? `/chat/completions?api-version=${c.api_version}`
+            : c.provider === 'openrouter' 
+            ? '' 
+            : '/v1/chat/completions';
+
+        const body = {
+            messages: p.messages,
+            model: c.provider === 'azure' || c.provider === 'openrouter' ? undefined : c.model,
+            temperature: c.temperature,
+            max_tokens: c.max_tokens,
+            stream: c.stream,
+            ...c.kwargs
+        };
+
+        const response = await fetch(baseUrl + endpointPath, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || 'API call failed');
         }
-        const endTime = Date.now();
-        setTiming(t => ({...t, [i]: {
-          ...t[i],
-          total: endTime - startTime,
-        }}));
-        upd(i, {response: text, isLoading: false});
-        return;
-      } else {
-        const data = await res.json();
-        const responseText = data.choices[0].message.content;
-        const endTime = Date.now();
-        setTiming(t => ({...t, [i]: {
-          latency: endTime - startTime,
-          total: endTime - startTime
-        }}));
-        upd(i, {response: responseText, isLoading: false});
-      }
-    } catch(e) {
-      console.error('API Error:', e);
-      upd(i, {response: `Error: ${e.message}`, isLoading: false});
+
+        // Stream handling
+        if (c.stream) {
+            const reader = response.body?.getReader();
+            let text = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const lines = new TextDecoder().decode(value).split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') break;
+
+                        try {
+                            const content = JSON.parse(data).choices[0]?.delta?.content || '';
+                            if (!firstTokenTime && content) {
+                                firstTokenTime = Date.now();
+                                setTiming(t => ({
+                                    ...t, [i]: { latency: firstTokenTime - startTime }
+                                }));
+                            }
+                            text += content;
+                            upd(i, { response: text, isLoading: true });
+                        } catch (err) {
+                            console.error('Error parsing stream data:', err);
+                        }
+                    }
+                }
+            }
+            const endTime = Date.now();
+            setTiming(t => ({
+                ...t, [i]: { ...t[i], total: endTime - startTime }
+            }));
+            upd(i, { response: text, isLoading: false });
+        } else {
+            // Non-streaming case
+            const data = await response.json();
+            const responseText = data.choices[0].message.content;
+            const endTime = Date.now();
+            setTiming(t => ({
+                ...t, [i]: { latency: endTime - startTime, total: endTime - startTime }
+            }));
+            upd(i, { response: responseText, isLoading: false });
+        }
+    } catch (e) {
+        console.error('API Error:', e);
+        upd(i, { response: `Error: ${e.message}`, isLoading: false });
     }
 };
+
 
   const Dlg = ({t,c,o}) => <Dialog><DialogTrigger asChild>{t}</DialogTrigger><M t={o} c={c}/></Dialog>;
 
   return (
-
     <div className="h-screen bg-gray-900 text-gray-100 flex">
-          <div className="h-screen bg-gray-900 text-gray-100 flex flex-col">
-    {/* Return Home Button */}
-    <div className="p-4">
-      {referrer && (
-        <Button onClick={() => window.location.href = referrer} variant="ghost" className="flex items-center gap-1">
-          <ArrowLeft className="h-4 w-4"/>Home
-        </Button>
-      )}
-    </div>
-    </div>
       {modal.c && <Dialog open onOpenChange={()=>setModal({t:'',c:''})}>{modal.t === 'Response' ? modal.c : 
         <M t={modal.t} c={<>
           <textarea value={modal.c} readOnly className="mt-4 w-full h-48 bg-gray-900 p-2 text-sm font-mono rounded" onClick={e=>e.target.select()}/>
@@ -272,7 +246,7 @@ const call = async i => {
             }
           }}
           style={{minHeight:'500px'}} 
-          className={`w-full flex-1 font-mono text-sm bg-gray-800/50 p-2 rounded border ${err?'border-red-500':'border-gray-700'}`}
+          className={`w-full flex-1 font-mono text-xs bg-gray-800/50 p-2 rounded border ${err?'border-red-500':'border-gray-700'}`}
         />
         {err && <div className="text-xs text-red-500">{err}</div>}
       </div>

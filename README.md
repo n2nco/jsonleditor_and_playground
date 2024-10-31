@@ -2,6 +2,13 @@
 
 ## Table of Contents
 
+
+# B:
+
+- playground: cd src -> npm run dev
+-- artifact component = the playground
+- jsonleditor: backend -> python app.py
+
 - [Summary](#summary)
 - [Overview](#overview)
 - [Project scope](#project-scope)
