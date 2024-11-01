@@ -68,13 +68,12 @@ const ModelPlayground = () => {
   [err, setErr] = useState(''), 
   [drag, setDrag] = useState(null), 
   [modal, setModal] = useState({t:'',c:''}), 
-  [timing, setTiming] = useState({}),  // Add this line
+  [timing, setTiming] = useState({}),
   [referrer, setReferrer] = useState(null);
 
   const ref = useRef();
 
   useEffect(() => {
-    // Retrieve configurations and panels from local storage if available
     const storedCfgs = JSON.parse(localStorage.getItem('cfgs') || '{}');
     const storedPanels = JSON.parse(localStorage.getItem('panels') || '[]');
     if (Object.keys(storedCfgs).length) setCfgs(prev => ({ ...prev, ...storedCfgs }));
@@ -82,7 +81,6 @@ const ModelPlayground = () => {
   }, []);
 
   useEffect(() => {
-    // Retrieve the referrer URL and JSONL data from the query parameters
     const urlParams = new URLSearchParams(window.location.search);
     const referrerUrl = urlParams.get('referrer');
     const jsonlData = urlParams.get('jsonlData');
@@ -97,12 +95,15 @@ const ModelPlayground = () => {
       }
     }
   }, []);
+
   const save = (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch{} },
   parseMsg = t => { try { const d = JSON.parse(t); return d.messages||[d]; } catch { throw new Error('Invalid JSON'); }},
   upd = (i,u) => { 
-    const n = panels.map((p,x) => x===i ? {...p, ...u} : p);
-    setPanels(n);
-    save('panels',n);
+    setPanels(prevPanels => {
+      const n = prevPanels.map((p,x) => x===i ? {...p, ...u} : p);
+      save('panels',n);
+      return n;
+    });
   },
   saveConfig = () => {
     try {
@@ -116,8 +117,7 @@ const ModelPlayground = () => {
     }
   };
 
-  const call = async (i) => {
-    const p = panels[i];
+  const call = async (p, i) => {
     const c = { ...cfgs[p.configName] };
     if (!c?.api_key) return upd(i, { response: 'Need API key' });
 
@@ -164,7 +164,6 @@ const ModelPlayground = () => {
             throw new Error(errorData.error?.message || 'API call failed');
         }
 
-        // Stream handling
         if (c.stream) {
             const reader = response.body?.getReader();
             let text = '';
@@ -200,7 +199,6 @@ const ModelPlayground = () => {
             }));
             upd(i, { response: text, isLoading: false });
         } else {
-            // Non-streaming case
             const data = await response.json();
             const responseText = data.choices[0].message.content;
             const endTime = Date.now();
@@ -213,177 +211,329 @@ const ModelPlayground = () => {
         console.error('API Error:', e);
         upd(i, { response: `Error: ${e.message}`, isLoading: false });
     }
-};
+  };
 
+  const [panelDrag, setPanelDrag] = useState(null);
+  const [panelWidths, setPanelWidths] = useState({});
+
+  const handlePanelDragStart = (e, index) => {
+    setPanelDrag(index);
+    e.currentTarget.style.opacity = '0.5';
+  };
+
+  const handlePanelDragEnd = (e) => {
+    e.currentTarget.style.opacity = '1';
+    setPanelDrag(null);
+  };
+
+  const handlePanelDrop = (dropIndex) => {
+    if (panelDrag === null) return;
+    
+    const newPanels = [...panels];
+    const [movedPanel] = newPanels.splice(panelDrag, 1);
+    newPanels.splice(dropIndex, 0, movedPanel);
+    
+    setPanels(newPanels);
+    save('panels', newPanels);
+  };
 
   const Dlg = ({t,c,o}) => <Dialog><DialogTrigger asChild>{t}</DialogTrigger><M t={o} c={c}/></Dialog>;
-
   return (
-          <div className="h-screen bg-gray-900 text-gray-100 flex">
-          <div className="h-screen bg-gray-900 text-gray-100 flex flex-col">
-      {/* Return Home Button */}
-      <div className="p-4">
-      {referrer && (
-        <Button onClick={() => window.location.href = referrer} variant="ghost" className="flex items-center gap-1">
-          <ArrowLeft className="h-4 w-4"/>Home
-        </Button>
-      )}
-      </div>
-      </div>
-      {modal.c && <Dialog open onOpenChange={()=>setModal({t:'',c:''})}>{modal.t === 'Response' ? modal.c : 
-        <M t={modal.t} c={<>
-          <textarea value={modal.c} readOnly className="mt-4 w-full h-48 bg-gray-900 p-2 text-sm font-mono rounded" onClick={e=>e.target.select()}/>
-          <B className="mt-2" onClick={()=>{navigator.clipboard.writeText(modal.c); setModal(m=>({...m,t:'Copied!'}));}}>
-            Copy <Copy className="ml-2 h-4 w-4"/>
-          </B>
-        </>}/>
-      }</Dialog>}
-      <div className="w-96 border-r border-gray-700 p-4 space-y-4">
-      <div className="flex justify-between mb-4">
-      <Select value={name} onValueChange={v=>{setName(v);setCur(cfgs[v]);setCurText(JSON.stringify(cfgs[v],null,2));setErr('');}}>
-        <SelectTrigger className="w-64 text-gray-100 bg-gray-800 text-left">
-          <SelectValue className="text-left truncate"/>
-        </SelectTrigger>
-        <SelectContent className="bg-gray-800 border-gray-700">
-          {Object.keys(cfgs).map(n=><SelectItem key={n} value={n} className="text-gray-100">{n}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <div className="flex items-center gap-1">
-        <Dlg t={<B><Plus className="h-3 w-3"/></B>} o="New Config" c={<div className="flex gap-2 mt-4">
-          <input placeholder="Name" className="flex-1 bg-gray-900 p-2 rounded" id="n"/>
-          <B onClick={()=>{const n=document.getElementById('n').value; if(!n||cfgs[n])return;
-            const nc={...d.b,...d.o}; setCfgs(p=>({...p,[n]:nc})); setName(n); setCur(nc);
-            setCurText(JSON.stringify(nc,null,2));
-          }}><Plus className="h-4 w-4"/></B>
-        </div>}/>
-        <B onClick={()=>{
-          const nc = cur.provider==='azure'?{...d.b,...d.a}:{...d.b,...d.o};
-          setCur(nc);
-          setCurText(JSON.stringify(nc,null,2));
-        }}><RotateCcw className="h-4 w-4"/></B>
-        <B onClick={saveConfig}><Save className="h-4 w-4"/></B>
-      </div>
-    </div>
-        <textarea 
-          value={curText} 
-          onChange={e=>{
-            setCurText(e.target.value);
-            try { JSON.parse(e.target.value); setErr(''); } catch {}
-          }}
-          onKeyDown={e => {
-            if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              saveConfig();
-            }
-          }}
-          style={{minHeight:'500px'}} 
-          className={`w-full flex-1 font-mono text-xs bg-gray-800/50 p-2 rounded border ${err?'border-red-500':'border-gray-700'}`}
-        />
-        {err && <div className="text-xs text-red-500">{err}</div>}
-      </div>
-      <div className="flex-1 flex overflow-x-auto pr-4 pb-16"> {/* Added pb-16 for footer space */}
-        {panels.map((p,i) => (
-          <div key={p.id} className="flex-1 min-w-[320px] p-2 border-r border-gray-800 flex flex-col relative resize-x overflow-auto">
-            <div className="flex gap-2 mb-2">
-              <span className="text-xs text-gray-400">P{i+1}</span>
-              <Select value={p.configName} onValueChange={v=>upd(i,{configName:v})}>
-                <SelectTrigger className="h-6 text-xs bg-gray-800 text-gray-100 border-0"><SelectValue/></SelectTrigger>
+    <div className="h-screen bg-gray-900 text-gray-100 flex flex-col">
+      <div className="flex flex-1 min-h-0">
+        {/* Left Sidebar */}
+        <div className="w-96 flex flex-col border-r border-gray-700">
+          {/* Config Section */}
+          <div className="p-4 flex-1 flex flex-col">
+            <div className="flex justify-between">
+              <Select value={name} onValueChange={v=>{setName(v);setCur(cfgs[v]);setCurText(JSON.stringify(cfgs[v],null,2));setErr('');}}>
+                <SelectTrigger className="w-64 text-gray-100 bg-gray-800 text-left">
+                  <SelectValue className="text-left truncate"/>
+                </SelectTrigger>
                 <SelectContent className="bg-gray-800 border-gray-700">
                   {Object.keys(cfgs).map(n=><SelectItem key={n} value={n} className="text-gray-100">{n}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Dlg t={<B className="text-xs px-2">i</B>} o="Import" c={<>
-                <textarea ref={ref} placeholder="Paste JSONL..." className="mt-4 w-full h-48 bg-gray-900 p-2 text-sm font-mono rounded"/>
-                <B className="mt-2" onClick={()=>{try{
-                  upd(i,{messages:parseMsg(ref.current.value)});
-                }catch{setModal({t:'Error',c:'Invalid format'});}}}>Import</B>
-              </>}/>
-              <B className="text-xs px-2" onClick={()=>setModal({t:'Export',c:JSON.stringify({messages:p.response?
-                [...p.messages,{role:'assistant',content:p.response}]:p.messages})})}>e</B>
-              <B className="h-6 w-6 p-0 ml-auto" onClick={()=>setPanels(x=>x.filter((_,n)=>n!==i))}><X className="h-3 w-3"/></B>
-            </div>
-            <div className="flex-1 overflow-y-auto min-h-0 pb-2">
-              <div className="space-y-1">
-                {p.messages.map((m,j) => (
-                  <div key={j} className="space-y-1 bg-gray-800/30 p-1 rounded group" draggable
-                    onDragStart={e=>{setDrag({i,j});e.currentTarget.style.opacity='.5';}}
-                    onDragEnd={e=>{e.currentTarget.style.opacity='1';setDrag(null);}}
-                    onDragOver={e=>e.preventDefault()}
-                    onDrop={()=>{
-                      if(!drag)return;
-                      const n=panels.map((x,pi)=>{
-                        if(pi!==i)return x;
-                        const m=[...x.messages];
-                        const[v]=m.splice(drag.j,1);
-                        m.splice(j,0,v);
-                        return{...x,messages:m};
-                      });
-                      setPanels(n);
-                      save('panels',n);
-                    }}
-                  ><div className="flex gap-2">
-                      <GripVertical className="h-4 w-4 text-gray-500 opacity-0 group-hover:opacity-100 cursor-grab"/>
-                      <input 
-                        value={m.role} 
-                        onChange={e=>upd(i,{messages:p.messages.map((x,mi)=>mi===j?{...x,role:e.target.value}:x)})}
-                        className="text-xs bg-transparent w-16 outline-none"
-                      />
-                      <Trash2 
-                        onClick={()=>upd(i,{messages:p.messages.filter((_,mi)=>mi!==j)})}
-                        className="h-3 w-3 text-gray-500 opacity-0 group-hover:opacity-100 cursor-pointer ml-auto"
-                      />
-                    </div>
-                    <textarea 
-                      value={m.content} 
-                      onChange={e => upd(i,{messages:p.messages.map((x,mi)=>
-                        mi===j?{...x,content:e.target.value}:x)})} 
-                      className="w-full bg-gray-800/50 text-sm p-1 rounded resize-vertical min-h-[2.5rem] selection:bg-blue-500/50"
-                    />
-                  </div>
-                ))}
+              <div className="flex items-center gap-1">
+                <Dlg t={<B><Plus className="h-3 w-3"/></B>} o="New Config" c={<form onSubmit={(e)=>{
+                  e.preventDefault();
+                  const n=document.getElementById('n').value; 
+                  if(!n||cfgs[n])return;
+                  const nc={...d.b,...d.o}; 
+                  setCfgs(p=>({...p,[n]:nc})); 
+                  setName(n); 
+                  setCur(nc);
+                  setCurText(JSON.stringify(nc,null,2));
+                  setModal({t:'',c:''});
+                }} className="flex gap-2 mt-4">
+                  <input placeholder="Name" className="flex-1 bg-gray-900 p-2 rounded" id="n"/>
+                  <button type="submit"><Plus className="h-4 w-4"/></button>
+                </form>}/>
+                <B onClick={()=>{
+                  const nc = cur.provider==='azure'?{...d.b,...d.a}:{...d.b,...d.o};
+                  setCur(nc);
+                  setCurText(JSON.stringify(nc,null,2));
+                }}><RotateCcw className="h-4 w-4"/></B>
+                <B onClick={saveConfig}><Save className="h-4 w-4"/></B>
               </div>
-              {p.response!==undefined && (
-                <div className="relative mt-2">
-                  <textarea 
-                    value={p.response} 
-                    readOnly
-                    className="w-full bg-gray-800/50 text-sm p-1 rounded resize-vertical min-h-[100px] pr-8"
-                  />
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="absolute top-4 right-2 opacity-50 hover:opacity-100"
-                    onClick={() => setModal({
-                      t: 'Response', 
-                      c: <ResponseModal 
-                          content={p.response} 
-                          onSave={(newContent) => {
-                            upd(i, {response: newContent});
-                            setModal({t:'',c:''});
+            </div>
+
+            <textarea 
+              value={curText} 
+              onChange={e=>{
+                setCurText(e.target.value);
+                try { JSON.parse(e.target.value); setErr(''); } catch {}
+              }}
+              onKeyDown={e => {
+                if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  saveConfig();
+                }
+              }}
+              className={`h-[300px] w-full font-mono text-xs bg-gray-800/50 p-2 rounded border mt-4 ${err?'border-red-500':'border-gray-700'}`}
+            />
+            {err && <div className="text-xs text-red-500">{err}</div>}
+          </div>
+
+          {/* Home Button */}
+          {referrer && (
+            <div className="p-2 border-t border-gray-800">
+              <Button 
+                onClick={() => window.location.href = referrer} 
+                variant="ghost" 
+                className="text-gray-400 hover:text-gray-300 text-sm flex items-center gap-1 h-7"
+              >
+                <ArrowLeft className="h-3 w-3"/>
+                Back
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 overflow-x-auto">
+            <div className="flex flex-row h-full w-full">
+              {panels.map((p,i) => (
+                <div
+                  key={p.id}
+                  className="panel relative flex flex-col h-full"
+                  style={{ 
+                    flex: panelWidths[i] ? `0 0 ${panelWidths[i]}px` : '1 1 0%',
+                    minWidth: '320px',
+                    maxWidth: '2400px',
+                    opacity: panelDrag === i ? 0.5 : 1 
+                  }}
+                  draggable
+                  onDragStart={(e) => handlePanelDragStart(e, i)}
+                  onDragEnd={handlePanelDragEnd}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handlePanelDrop(i);
+                  }}
+                >
+                  <div className="h-full flex flex-col p-2 border-r border-gray-800">
+                    <div className="flex gap-2 mb-2">
+                      <span className="text-xs text-gray-400 cursor-move">P{i+1}</span>
+                      <Select value={p.configName} onValueChange={v=>upd(i,{configName:v})}>
+                        <SelectTrigger className="h-6 text-xs bg-gray-800 text-gray-100 border-0"><SelectValue/></SelectTrigger>
+                        <SelectContent className="bg-gray-800 border-gray-700">
+                          {Object.keys(cfgs).map(n=><SelectItem key={n} value={n} className="text-gray-100">{n}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <Dlg t={<B className="text-xs px-2">i</B>} o="Import" c={<form onSubmit={(e)=>{
+                        e.preventDefault();
+                        try{
+                          upd(i,{messages:parseMsg(ref.current.value)});
+                          setModal({t:'',c:''});
+                        }catch{setModal({t:'Error',c:'Invalid format'});}
+                      }}>
+                        <textarea 
+                          ref={ref} 
+                          placeholder="Paste JSONL..." 
+                          className="mt-4 w-full h-48 bg-gray-900 p-2 text-sm font-mono rounded"
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                              e.preventDefault();
+                              e.target.form.requestSubmit();
+                            }
                           }}
                         />
-                    })}
-                  >
-                    <Maximize2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-            </div>
-            <div className="sticky bottom-0 bg-gray-900 py-2">
-              <div className="flex justify-between">
-                <B className="text-xs h-6" onClick={()=>upd(i,{messages:[...p.messages,{role:'user',content:''}]})}>+ msg</B>
-                <B className="text-xs h-6" onClick={()=>call(i)}>call</B>
-              </div>
-              {timing[i] && (
-                <div className="text-xs text-gray-500 mt-1 text-center">
-                  TTFT: {timing[i].latency}ms {timing[i].total && `• EOS: ${timing[i].total}ms`}
-                </div>
-              )}
-            </div>
+                        <Button type="submit" className="mt-2 w-full">Import</Button>
+                      </form>}/>
+                      <B className="text-xs px-2" onClick={()=>setModal({t:'Export',c:JSON.stringify({messages:p.response?
+                        [...p.messages,{role:'assistant',content:p.response}]:p.messages})})}>e</B>
+                      <B className="h-6 w-6 p-0 ml-auto" onClick={()=>setPanels(x=>x.filter((_,n)=>n!==i))}><X className="h-3 w-3"/></B>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto min-h-0 pb-2">
+                      <div className="space-y-1">
+                        {p.messages.map((m,j) => (
+                          <div key={j} className="space-y-1 bg-gray-800/30 p-1 rounded group" draggable="true"
+                            onDragStart={e=>{
+                              e.stopPropagation();
+                              setDrag({i,j});
+                              e.currentTarget.style.opacity='.5';
+                              e.dataTransfer.effectAllowed = 'move';
+                            }}
+                            onDragEnd={e=>{
+                              e.stopPropagation();
+                              e.currentTarget.style.opacity='1';
+                              setDrag(null);
+                            }}
+                            onDragOver={e=>{
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.dataTransfer.dropEffect = 'move';
+                            }}
+                            onDrop={e=>{
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if(!drag || drag.i !== i) return;
+                              const n=panels.map((x,pi)=>{
+                                if(pi!==i)return x;
+                                const m=[...x.messages];
+                                const[v]=m.splice(drag.j,1);
+                                m.splice(j,0,v);
+                                return{...x,messages:m};
+                              });
+                              setPanels(n);
+                              save('panels',n);
+                            }}
+                          >
+                            <div className="flex gap-2">
+                              <GripVertical className="h-4 w-4 text-gray-500 opacity-0 group-hover:opacity-100 cursor-grab"/>
+                              <input 
+                                value={m.role} 
+                                onChange={e=>upd(i,{messages:p.messages.map((x,mi)=>mi===j?{...x,role:e.target.value}:x)})}
+                                onKeyDown={e=>{
+                                  if(e.key === 'Enter') {
+                                    e.preventDefault();
+                                    e.target.blur();
+                                  }
+                                }}
+                                className="text-xs bg-transparent w-16 outline-none"
+                              />
+                              <Trash2 
+                                onClick={()=>upd(i,{messages:p.messages.filter((_,mi)=>mi!==j)})}
+                                className="h-3 w-3 text-gray-500 opacity-0 group-hover:opacity-100 cursor-pointer ml-auto"
+                              />
+                            </div>
+                            <textarea 
+                              value={m.content} 
+                              onChange={e => upd(i,{messages:p.messages.map((x,mi)=>
+                                mi===j?{...x,content:e.target.value}:x)})} 
+                              className="w-full bg-gray-800/50 text-sm p-1 rounded resize-vertical min-h-[2.5rem] selection:bg-blue-500/50"
+                            />
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                      {p.response!==undefined && (
+                        <div className="relative mt-2">
+                          <textarea 
+                            value={p.response} 
+                            onChange={e => upd(i, { response: e.target.value })}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                e.preventDefault();
+                                call(p, i);
+                              }
+                            }}
+                            className="w-full bg-gray-800/70 text-sm p-1 rounded resize-vertical min-h-[100px] pr-8"
+                          />
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="absolute top-4 right-2 opacity-50 hover:opacity-100"
+                            onClick={() => setModal({
+                              t: 'Response', 
+                              c: <ResponseModal 
+                                  content={p.response} 
+                                  onSave={(newContent) => {
+                                    upd(i, {response: newContent});
+                                    setModal({t:'',c:''});
+                                  }}
+                                />
+                            })}
+                          >
+                            <Maximize2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="sticky bottom-0 bg-gray-900 py-2">
+                      <div className="flex justify-between">
+                        <B className="text-xs h-6" onClick={()=>upd(i,{messages:[...p.messages,{role:'user',content:''}]})}>+ msg</B>
+                        <B className="text-xs h-6" onClick={()=>call(p, i)}>call</B>
+                      </div>
+                      {timing[i] && (
+                        <div className="text-xs text-gray-500 mt-1 text-center">
+                          TTFT: {timing[i].latency}ms {timing[i].total && `• EOS: ${timing[i].total}ms`}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Resize Handle */}
+                  {i < panels.length - 1 && (
+                    <div 
+                      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 z-10"
+                      onMouseDown={(e) => {
+                        if (e.button !== 0) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        const panelElement = e.currentTarget.closest('.panel');
+                        if (!panelElement) return;
+                        const nextPanelElement = panelElement.nextElementSibling;
+                        if (!nextPanelElement) return;
+                        
+                        const startX = e.clientX;
+                        const panel1Width = panelWidths[i] || panelElement.offsetWidth;
+                        const panel2Width = panelWidths[i + 1] || nextPanelElement.offsetWidth;
+      
+                        const handleMouseMove = (moveEvent) => {
+                          const deltaX = moveEvent.clientX - startX;
+                          const newPanel1Width = panel1Width + deltaX;
+                          const newPanel2Width = panel2Width - deltaX;
+      
+                          // Set minimum widths
+                          const minWidth = 320;
+                          if (newPanel1Width < minWidth || newPanel2Width < minWidth) return;
+      
+                          setPanelWidths(prev => ({
+                            ...prev,
+                            [i]: newPanel1Width,
+                            [i + 1]: newPanel2Width
+                          }));
+                        };
+      
+                        const handleMouseUp = () => {
+                          document.removeEventListener('mousemove', handleMouseMove);
+                          document.removeEventListener('mouseup', handleMouseUp);
+                          document.body.style.cursor = '';
+                        };
+      
+                        document.body.style.cursor = 'col-resize';
+                        document.addEventListener('mousemove', handleMouseMove);
+                        document.addEventListener('mouseup', handleMouseUp);
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="fixed bottom-0 left-0 right-0 p-2 bg-gray-900 border-t border-gray-800 z-10">
+
+      {/* Footer */}
+      <div className="sticky bottom-0 p-2 bg-gray-900 border-t border-gray-800">
         <div className="flex justify-between items-center">
           <div className="flex gap-2">
             <Dlg 
@@ -398,34 +548,75 @@ const ModelPlayground = () => {
                     messages:[...(p[i]?.messages||[])],
                     response:''
                   }]);
+                  setModal({t:'',c:''});
                 }}
               />}
             />
             <Dlg 
-              t={<B>import a JSONL chat to all panels</B>} 
-              o="Import to All Panels" 
-              c={<>
-                <textarea 
-                  ref={ref} 
-                  placeholder="Paste JSONL..."
-                  className="mt-4 w-full h-48 bg-gray-900 p-2 text-sm font-mono rounded"
-                />
-                <B className="mt-2" onClick={()=>{try{
-                  const m=parseMsg(ref.current.value);
-                  setPanels(p=>p.map(x=>({...x,messages:m})));
-                  save('panels',panels);
-                }catch{setModal({t:'Error',c:'Invalid format'});}}}>Import</B>
-              </>}
-            />
-          </div>
-          <B onClick={() => {
-            const currentPanels = [...panels];
-            currentPanels.forEach((_, i) => call(i));
-          }}>Call All</B>
-        </div>
-      </div>
-    </div>
-  );
-};
+             t={<B>Import JSONL to all panels</B>} 
+             o="Import to All Panels" 
+             c={<form onSubmit={(e)=>{
+               e.preventDefault();
+               try{
+                 const m=parseMsg(ref.current.value);
+                 setPanels(p=>p.map(x=>({...x,messages:m})));
+                 save('panels',panels);
+                 setModal({t:'',c:''});
+               }catch{setModal({t:'Error',c:'Invalid format'});}
+             }}>
+               <textarea 
+                 ref={ref} 
+                 placeholder="Paste JSONL..."
+                 onKeyDown={e => {
+                   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                     e.preventDefault();
+                     e.target.form.requestSubmit();
+                   }
+                 }}
+                 className="mt-4 w-full h-48 bg-gray-900 p-2 text-sm font-mono rounded"
+               />
+               <Button type="submit" className="mt-2 w-full">Import</Button>
+             </form>}
+           />
+         </div>
+         <div className="flex gap-2 items-center">
+           <B onClick={() => {
+             panels.forEach((panel, idx) => {
+               call(panel, idx);
+             });
+           }}>Call All</B>
+         </div>
+       </div>
+     </div>
+
+     {/* Modal */}
+     {modal.c && (
+       <Dialog open onOpenChange={() => setModal({t:'',c:''})}>
+         {modal.t === 'Response' ? modal.c : (
+           <M t={modal.t} c={
+             <>
+               <textarea 
+                 value={modal.c} 
+                 readOnly 
+                 className="mt-4 w-full h-48 bg-gray-900 p-2 text-sm font-mono rounded" 
+                 onClick={e => e.target.select()}
+               />
+               <B 
+                 className="mt-2" 
+                 onClick={() => {
+                   navigator.clipboard.writeText(modal.c);
+                   setModal(m => ({...m,t:'Copied!'}));
+                 }}
+               >
+                 Copy <Copy className="ml-2 h-4 w-4"/>
+               </B>
+             </>
+           }/>
+         )}
+       </Dialog>
+     )}
+   </div>
+ );
+}
 
 export default ModelPlayground;
